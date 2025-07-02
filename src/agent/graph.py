@@ -1,54 +1,121 @@
-"""LangGraph single-node graph template.
-
-Returns a predefined response. Replace logic and configuration as needed.
+"""
+Market Research Intelligence Platform
+Production-grade customer psychology research
 """
 
-from __future__ import annotations
+from typing import Annotated, Dict, Any
+from typing_extensions import TypedDict
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import BaseMessage, HumanMessage
+from langgraph import StateGraph, END
+from langgraph.graph.message import add_messages
+from langsmith import traceable
+import os
 
-from dataclasses import dataclass
-from typing import Any, Dict, TypedDict
+class ResearchState(TypedDict):
+    """State for market research workflow"""
+    messages: Annotated[list[BaseMessage], add_messages]
+    business_context: str
+    research_insights: str
+    quality_score: int
+    session_id: str
 
-from langchain_core.runnables import RunnableConfig
-from langgraph.graph import StateGraph
+# Production-grade research prompt
+PSYCHOLOGY_RESEARCH_PROMPT = """
+MARKET RESEARCH INTELLIGENCE - SESSION ISOLATION PROTOCOL
 
+BUSINESS CONTEXT FOR ANALYSIS:
+{business_context}
 
-class Configuration(TypedDict):
-    """Configurable parameters for the agent.
+RESEARCH DIRECTIVE:
+Conduct comprehensive customer psychology research with Eugene Schwartz-level depth and business actionability.
 
-    Set these when creating assistants OR when invoking the graph.
-    See: https://langchain-ai.github.io/langgraph/cloud/how-tos/configuration_cloud/
+ANALYSIS FRAMEWORK:
+
+1. PSYCHOLOGICAL PROFILING
+   - Core motivational drivers and psychological triggers
+   - Hidden pain points and unconscious desires
+   - Belief system analysis and mental models
+   - Decision-making patterns and cognitive biases
+
+2. VOICE OF CUSTOMER INTELLIGENCE
+   - Authentic language patterns and terminology
+   - Emotional expression patterns
+   - Pain articulation phrases and frustration language
+   - Aspiration and desire language patterns
+
+3. BUYER PSYCHOLOGY FRAMEWORKS
+   - Eugene Schwartz awareness levels (unaware → most aware)
+   - Decision triggers and conversion psychology
+   - Objection patterns and resistance points
+   - Trust and authority preference indicators
+
+4. STRATEGIC POSITIONING INSIGHTS
+   - Breakthrough positioning opportunities
+   - Messaging angles by awareness level
+   - Conversion psychology applications
+   - Competitive differentiation psychology
+
+5. CAMPAIGN-READY INTELLIGENCE
+   - Specific copy hooks and headlines
+   - Emotional trigger sequences
+   - Trust-building messaging strategy
+   - Conversion path psychology
+
+QUALITY STANDARDS:
+- Provide insights that make clients say "how did you know that?"
+- Include 3-5 authentic customer voice examples
+- Ensure all insights are immediately actionable
+- Focus on psychological depth beyond surface demographics
+
+DELIVERABLE FORMAT:
+Structure response with clear sections, authentic quotes, and specific recommendations.
+"""
+
+@traceable(name="psychology_research_node")
+def research_node(state: ResearchState) -> Dict[str, Any]:
     """
-
-    my_configurable_param: str
-
-
-@dataclass
-class State:
-    """Input state for the agent.
-
-    Defines the initial structure of incoming data.
-    See: https://langchain-ai.github.io/langgraph/concepts/low_level/#state
+    Main psychology research node
     """
-
-    changeme: str = "example"
-
-
-async def call_model(state: State, config: RunnableConfig) -> Dict[str, Any]:
-    """Process input and returns output.
-
-    Can use runtime configuration to alter behavior.
-    """
-    configuration = config["configurable"]
+    llm = ChatOpenAI(
+        model="gpt-4o-mini",
+        temperature=0.3,
+        openai_api_key=os.getenv("OPENAI_API_KEY")
+    )
+    
+    # Format research prompt
+    formatted_prompt = PSYCHOLOGY_RESEARCH_PROMPT.format(
+        business_context=state["business_context"]
+    )
+    
+    # Execute research
+    response = llm.invoke([HumanMessage(content=formatted_prompt)])
+    
+    # Quality scoring based on response length and depth
+    quality_score = min(95, max(70, len(response.content) // 50))
+    
     return {
-        "changeme": "output from call_model. "
-        f'Configured with {configuration.get("my_configurable_param")}'
+        "research_insights": response.content,
+        "quality_score": quality_score,
+        "messages": [response],
+        "session_id": f"research_{hash(state['business_context']) % 10000}"
     }
 
+# Create production research workflow
+def create_research_workflow():
+    """
+    Production workflow for market research
+    """
+    workflow = StateGraph(ResearchState)
+    
+    # Add research node
+    workflow.add_node("research", research_node)
+    
+    # Define flow
+    workflow.set_entry_point("research")
+    workflow.add_edge("research", END)
+    
+    return workflow.compile()
 
-# Define the graph
-graph = (
-    StateGraph(State, config_schema=Configuration)
-    .add_node(call_model)
-    .add_edge("__start__", "call_model")
-    .compile(name="New Graph")
-)
+# Export the compiled graph for LangGraph Platform
+graph = create_research_workflow()
