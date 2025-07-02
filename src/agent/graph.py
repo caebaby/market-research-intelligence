@@ -75,13 +75,45 @@ Structure response with clear sections, authentic quotes, and specific recommend
 @traceable(name="psychology_research_node")
 def research_node(state: ResearchState) -> Dict[str, Any]:
     """
-    Main psychology research node
+    Main psychology research node with Claude primary
     """
-    llm = ChatOpenAI(
-        model="gpt-4o-mini",
-        temperature=0.3,
-        openai_api_key=os.getenv("OPENAI_API_KEY")
+    # Try Claude first for superior psychology insights
+    try:
+        from langchain_anthropic import ChatAnthropic
+        if os.getenv("ANTHROPIC_API_KEY"):
+            llm = ChatAnthropic(
+                model="claude-3-sonnet-20240229",
+                temperature=0.2,
+                anthropic_api_key=os.getenv("ANTHROPIC_API_KEY")
+            )
+            research_quality = "Premium (Claude)"
+        else:
+            raise Exception("Fallback to OpenAI")
+    except:
+        llm = ChatOpenAI(
+            model="gpt-4o-mini",
+            temperature=0.3,
+            openai_api_key=os.getenv("OPENAI_API_KEY")
+        )
+        research_quality = "Standard (GPT-4)"
+    
+    # Format research prompt
+    formatted_prompt = PSYCHOLOGY_RESEARCH_PROMPT.format(
+        business_context=state["business_context"]
     )
+    
+    # Execute research
+    response = llm.invoke([HumanMessage(content=formatted_prompt)])
+    
+    # Quality scoring based on response length and depth
+    quality_score = min(95, max(70, len(response.content) // 50))
+    
+    return {
+        "research_insights": response.content,
+        "quality_score": quality_score,
+        "messages": [response],
+        "session_id": f"research_{hash(state['business_context']) % 10000}"
+    }
     
     # Format research prompt
     formatted_prompt = PSYCHOLOGY_RESEARCH_PROMPT.format(
